@@ -1,81 +1,26 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { useEffect, useState } from "react"
-import { AlertTriangle, Shield, AlertCircle } from "lucide-react"
-import type { ExchangeFlow } from "@/lib/types"
-import { CONTRACT_TO_TOKEN } from "@/lib/types"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { TrendingDown, TrendingUp, Minus } from "lucide-react"
 
 export function RiskIndicator() {
-  const [riskData, setRiskData] = useState<{
-    level: "low" | "medium" | "high"
-    label: string
-    description: string
-    stablecoinRatio: number
-  } | null>(null)
+  const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const response = await fetch("/api/dune/exchange-flows")
+        const response = await fetch('/api/stablecoins', { cache: 'no-store' })
         const result = await response.json()
-
-        if (result.success) {
-          let flows: ExchangeFlow[] = result.data
-
-          // Map contract addresses to tokens
-          flows = flows.map((flow) => ({
-            ...flow,
-            token: CONTRACT_TO_TOKEN[flow.contract_address.toLowerCase()] || "UNKNOWN",
-          }))
-
-          // Calculate stablecoin vs crypto ratio
-          const stablecoinInflow = flows
-            .filter((f) => f.token === "USDT" || f.token === "USDC")
-            .reduce((sum, f) => sum + f.inflow, 0)
-
-          const cryptoInflow = flows
-            .filter((f) => f.token === "WETH" || f.token === "WBTC")
-            .reduce((sum, f) => sum + f.inflow, 0)
-
-          const totalInflow = stablecoinInflow + cryptoInflow
-          const stablecoinRatio = totalInflow > 0 ? (stablecoinInflow / totalInflow) * 100 : 0
-
-          // Determine risk level
-          let level: "low" | "medium" | "high"
-          let label: string
-          let description: string
-
-          if (stablecoinRatio > 60) {
-            level = "high"
-            label = "Risk-Off Mode"
-            description = "High stablecoin inflows suggest whales rotating to safety"
-          } else if (stablecoinRatio > 40) {
-            level = "medium"
-            label = "Cautious"
-            description = "Balanced flows between stablecoins and crypto"
-          } else {
-            level = "low"
-            label = "Risk-On Mode"
-            description = "Low stablecoin inflows suggest confidence in crypto assets"
-          }
-
-          setRiskData({
-            level,
-            label,
-            description,
-            stablecoinRatio,
-          })
-        }
+        setData(result)
       } catch (error) {
-        console.error("[v0] Failed to fetch risk data:", error)
+        console.error('Error fetching risk data:', error)
       } finally {
         setLoading(false)
       }
     }
-
     fetchData()
   }, [])
 
@@ -84,66 +29,92 @@ export function RiskIndicator() {
       <Card>
         <CardHeader>
           <CardTitle>Risk Appetite</CardTitle>
-          <CardDescription>Whale sentiment based on stablecoin rotation</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex items-center justify-center h-[200px]">
-            <div className="text-sm text-muted-foreground">Analyzing risk...</div>
+          <div className="flex items-center justify-center h-48">
+            <p className="text-muted-foreground">Loading risk data...</p>
           </div>
         </CardContent>
       </Card>
     )
   }
 
-  if (!riskData) return null
+  const riskMode = data?.risk_mode || 'risk-on'
+  const ratio = data?.ratio || 0
 
-  const RiskIcon = riskData.level === "high" ? AlertTriangle : riskData.level === "medium" ? AlertCircle : Shield
+  const getRiskConfig = () => {
+    if (riskMode === 'risk-off') {
+      return {
+        label: 'Risk-Off Mode',
+        badgeVariant: 'destructive' as const,
+        icon: TrendingDown,
+        color: 'text-red-600',
+        bgColor: 'bg-red-50 dark:bg-red-950',
+        description: 'High stablecoin inflows suggest whales rotating to safety'
+      }
+    } else if (riskMode === 'neutral') {
+      return {
+        label: 'Neutral Mode',
+        badgeVariant: 'secondary' as const,
+        icon: Minus,
+        color: 'text-yellow-600',
+        bgColor: 'bg-yellow-50 dark:bg-yellow-950',
+        description: 'Balanced activity between crypto and stablecoins'
+      }
+    } else {
+      return {
+        label: 'Risk-On Mode',
+        badgeVariant: 'default' as const,
+        icon: TrendingUp,
+        color: 'text-green-600',
+        bgColor: 'bg-green-50 dark:bg-green-950',
+        description: 'Low stablecoin inflows suggest confidence in crypto assets'
+      }
+    }
+  }
+
+  const config = getRiskConfig()
+  const Icon = config.icon
 
   return (
-    <Card>
+    <Card className={config.bgColor}>
       <CardHeader>
-        <CardTitle>Risk Appetite</CardTitle>
-        <CardDescription>Whale sentiment based on stablecoin rotation</CardDescription>
+        <CardTitle className="flex items-center justify-between">
+          <span>Risk Appetite</span>
+          <Badge variant={config.badgeVariant}>
+            {ratio > 0.6 ? 'HIGH RISK' : ratio > 0.4 ? 'MEDIUM RISK' : 'LOW RISK'}
+          </Badge>
+        </CardTitle>
+        <p className="text-sm text-muted-foreground">
+          Whale sentiment based on stablecoin rotation
+        </p>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">Current Mode</p>
-            <div className="flex items-center gap-2">
-              <RiskIcon
-                className={`h-5 w-5 ${riskData.level === "high" ? "text-red-500" : riskData.level === "medium" ? "text-yellow-500" : "text-green-500"}`}
-              />
-              <span className="text-2xl font-bold">{riskData.label}</span>
-            </div>
+        <div className="flex items-center gap-4">
+          <div className={`flex h-16 w-16 items-center justify-center rounded-full ${config.bgColor} border-2`}>
+            <Icon className={`h-8 w-8 ${config.color}`} />
           </div>
-          <Badge
-            variant="outline"
-            className={
-              riskData.level === "high"
-                ? "bg-red-500/10 text-red-500 border-red-500/20"
-                : riskData.level === "medium"
-                  ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/20"
-                  : "bg-green-500/10 text-green-500 border-green-500/20"
-            }
-          >
-            {riskData.level.toUpperCase()} RISK
-          </Badge>
+          <div className="space-y-1">
+            <p className="text-2xl font-bold">{config.label}</p>
+            <p className="text-sm text-muted-foreground">Current Mode</p>
+          </div>
         </div>
 
         <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Stablecoin Inflow Ratio</span>
-            <span className="font-semibold">{riskData.stablecoinRatio.toFixed(1)}%</span>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Stablecoin Inflow Ratio</span>
+            <span className="text-2xl font-bold">{(ratio * 100).toFixed(1)}%</span>
           </div>
-          <div className="h-2 bg-muted rounded-full overflow-hidden">
-            <div
-              className={`h-full transition-all ${riskData.level === "high" ? "bg-red-500" : riskData.level === "medium" ? "bg-yellow-500" : "bg-green-500"}`}
-              style={{ width: `${riskData.stablecoinRatio}%` }}
+          <div className="h-2 w-full rounded-full bg-muted">
+            <div 
+              className={`h-full rounded-full transition-all ${
+                ratio > 0.6 ? 'bg-red-500' : ratio > 0.4 ? 'bg-yellow-500' : 'bg-green-500'
+              }`}
+              style={{ width: `${Math.min(ratio * 100, 100)}%` }}
             />
           </div>
+          <p className="text-xs text-muted-foreground">{config.description}</p>
         </div>
-
-        <p className="text-sm text-muted-foreground">{riskData.description}</p>
       </CardContent>
     </Card>
   )

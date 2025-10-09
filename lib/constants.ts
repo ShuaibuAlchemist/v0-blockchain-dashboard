@@ -2,7 +2,7 @@ export const APP_CONFIG = {
   name: "Blockchain Risk & Transparency Dashboard",
   description: "Real-time whale transaction monitoring and market risk assessment",
   url: process.env.NEXT_PUBLIC_API_URL ||
-  "https://blockchain-dashboard-api-xqvu.onrender.com";
+  'https://blockchain-dashboard-api-ujno.onrender.com'; 
 }
 
 export const TOKEN_SYMBOLS: Record<string, string> = {

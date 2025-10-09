@@ -1,33 +1,20 @@
 import { NextResponse } from "next/server"
-import { mockHistoricalPrices } from "@/lib/mock-data"
-
-const COINGECKO_BASE = "https://pro-api.coingecko.com/api/v3"
-const COINGECKO_API_KEY = process.env.Coingecko_API
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
-    const asset = searchParams.get("asset") || "ethereum"
     const days = searchParams.get("days") || "7"
 
-    const headers: HeadersInit = {}
-    if (COINGECKO_API_KEY) {
-      headers["x-cg-pro-api-key"] = COINGECKO_API_KEY
-    }
-
-    const response = await fetch(`${COINGECKO_BASE}/coins/${asset}/market_chart?vs_currency=usd&days=${days}`, {
-      headers,
-      next: { revalidate: 300 },
-    })
+    const response = await fetch(
+      `https://api.coingecko.com/api/v3/coins/ethereum/market_chart?vs_currency=usd&days=${days}`,
+      { 
+        cache: 'no-store',
+        next: { revalidate: 300 }
+      }
+    )
 
     if (!response.ok) {
-      console.error("[v0] CoinGecko historical API error:", response.status)
-      return NextResponse.json({
-        data: mockHistoricalPrices(asset),
-        asset,
-        success: true,
-        mock: true,
-      })
+      throw new Error('CoinGecko historical API failed')
     }
 
     const data = await response.json()
@@ -39,17 +26,15 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       data: prices,
-      asset,
-      success: true,
+      asset: "ethereum",
+      success: true
     })
   } catch (error) {
-    console.error("[v0] Historical prices API error:", error)
-    const asset = new URL(request.url).searchParams.get("asset") || "ethereum"
+    console.error("Historical price fetch error:", error)
     return NextResponse.json({
-      data: mockHistoricalPrices(asset),
-      asset,
-      success: true,
-      mock: true,
-    })
+      data: [],
+      success: false,
+      error: "Could not fetch historical prices"
+    }, { status: 500 })
   }
 }
