@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts"
+import { LineChart, Line, BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from "recharts"
 import { TrendingUp, TrendingDown, AlertTriangle, Activity, Wifi, WifiOff, Database } from "lucide-react"
 
 // Mock data generators
@@ -30,15 +30,19 @@ const generateEventStudyData = () => {
 const generateAnomalyData = () => {
   const data = []
   const today = new Date()
-  // Only 7 days for maximum bar width
-  for (let i = 6; i >= 0; i--) {
+  // 30 days of data
+  for (let i = 29; i >= 0; i--) {
     const date = new Date(today)
-    date.setDate(date.getDate() - i * 2) // Every 2 days
+    date.setDate(date.getDate() - i)
     const zScore = (Math.random() - 0.5) * 6
+    const absZScore = Math.abs(zScore)
     data.push({
       date: date.toISOString().split('T')[0],
       zScore: zScore,
-      isAnomaly: Math.abs(zScore) > 3
+      absZScore: absZScore,
+      isAnomaly: absZScore > 3,
+      upper: 3,
+      lower: -3
     })
   }
   return data
@@ -173,7 +177,6 @@ export default function AnalyticsPage() {
         saveToCache(CACHE_KEY_ANOMALY, anomData)
         
         setDataSource('mock')
-        // Don't set error for mock data
       }
       
       setLoading(false)
@@ -203,26 +206,6 @@ export default function AnalyticsPage() {
   if (!mounted) {
     return null
   }
-
-  const getDataSourceInfo = () => {
-    switch(dataSource) {
-      case 'api':
-      case 'dune':
-        return { icon: Wifi, text: 'Live Data', color: 'text-green-500' }
-      case 'mock_initial':
-      case 'cache':
-        return { icon: Database, text: 'Cached Data', color: 'text-blue-500' }
-      case 'cache_stale':
-        return { icon: Database, text: 'Stale Cache', color: 'text-yellow-500' }
-      case 'mock':
-        return { icon: WifiOff, text: 'Mock Data', color: 'text-orange-500' }
-      default:
-        return { icon: Activity, text: 'Loading...', color: 'text-gray-500' }
-    }
-  }
-
-  const sourceInfo = getDataSourceInfo()
-  const SourceIcon = sourceInfo.icon
 
   if (loading) {
     return (
@@ -432,46 +415,87 @@ export default function AnalyticsPage() {
             </div>
           </div>
           
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={anomalyData}>
-              <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-              <XAxis 
-                dataKey="date" 
-                className="text-xs"
-                tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-              />
-              <YAxis className="text-xs" domain={[-4, 4]} />
-              <Tooltip 
-                contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-                labelFormatter={(value) => new Date(value).toLocaleDateString()}
-                formatter={(value, name, props) => {
-                  const num = typeof value === 'number' ? value : parseFloat(value) || 0
-                  return [
-                    num.toFixed(2),
-                    props.payload.isAnomaly ? 'Anomaly Detected!' : 'Z-Score'
-                  ]
-                }}
-              />
-              <Bar 
-                dataKey="zScore" 
-                radius={[4, 4, 0, 0]}
+          <div className="h-80 rounded-lg border bg-card p-6">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart 
+                data={anomalyData}
+                margin={{ top: 10, right: 20, left: 0, bottom: 30 }}
               >
-                {anomalyData.map((entry, index) => (
-                  <Bar 
-                    key={`cell-${index}`} 
-                    fill={entry.isAnomaly ? "hsl(var(--destructive))" : "hsl(var(--primary))"}
-                  />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+                <defs>
+                  <linearGradient id="colorZScore" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={chartColors.tertiary} stopOpacity={0.8}/>
+                    <stop offset="95%" stopColor={chartColors.tertiary} stopOpacity={0.1}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke={chartColors.grid} opacity={0.5} />
+                <XAxis 
+                  dataKey="date" 
+                  stroke={chartColors.stroke}
+                  tick={{ fill: chartColors.text, fontSize: 11 }}
+                  tickFormatter={(value) => {
+                    try {
+                      const date = new Date(value)
+                      return `${date.getMonth() + 1}/${date.getDate()}`
+                    } catch {
+                      return value
+                    }
+                  }}
+                />
+                <YAxis 
+                  stroke={chartColors.stroke}
+                  tick={{ fill: chartColors.text, fontSize: 12 }}
+                  domain={[-4, 4]} 
+                  ticks={[-4, -2, 0, 2, 4]}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: chartColors.tooltipBg,
+                    border: `1px solid ${chartColors.tooltipBorder}`,
+                    borderRadius: '8px',
+                    padding: '12px'
+                  }}
+                  labelStyle={{ color: chartColors.tooltipText, fontWeight: 'bold' }}
+                  itemStyle={{ color: chartColors.tooltipText }}
+                  labelFormatter={(value) => {
+                    try {
+                      return new Date(value).toLocaleDateString('en-US', { 
+                        month: 'short', 
+                        day: 'numeric'
+                      })
+                    } catch {
+                      return value
+                    }
+                  }}
+                  formatter={(value, name, props) => {
+                    if (name === 'zScore') {
+                      const num = typeof value === 'number' ? value : parseFloat(value) || 0
+                      const label = props.payload?.isAnomaly ? '⚠️ ANOMALY' : 'Z-Score'
+                      return [num.toFixed(2), label]
+                    }
+                    return null
+                  }}
+                />
+                <ReferenceLine y={3} stroke={chartColors.destructive} strokeDasharray="3 3" opacity={0.6} />
+                <ReferenceLine y={-3} stroke={chartColors.destructive} strokeDasharray="3 3" opacity={0.6} />
+                <ReferenceLine y={0} stroke={chartColors.stroke} opacity={0.3} />
+                <Area 
+                  type="monotone" 
+                  dataKey="zScore" 
+                  stroke={chartColors.tertiary}
+                  strokeWidth={2}
+                  fill="url(#colorZScore)"
+                  fillOpacity={1}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
 
           <div className="flex items-start gap-2 p-4 bg-muted rounded-lg">
             <AlertTriangle className="h-5 w-5 mt-0.5 text-yellow-500" />
             <div className="space-y-1">
               <p className="text-sm font-medium">Detection Threshold</p>
               <p className="text-xs text-muted-foreground">
-                Red bars indicate whale activity more than 3 standard deviations from the mean. These often precede major price movements.
+                Values beyond ±3 standard deviations (red dashed lines) indicate whale activity that's significantly abnormal and often precedes major price movements.
               </p>
             </div>
           </div>
